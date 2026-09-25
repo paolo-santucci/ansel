@@ -294,7 +294,8 @@ typedef enum dt_image_loader_t
   LOADER_HEIF     = 11,
   LOADER_LIBRAW   = 12,
   LOADER_WEBP     = 13,
-  LOADER_COUNT    = 14, // keep last
+  LOADER_X3F      = 14,
+  LOADER_COUNT    = 15, // keep last
 } dt_image_loader_t;
 
 typedef enum dt_image_path_source_t
@@ -324,7 +325,8 @@ static const struct
   { N_("avif"),            'a'},
   { N_("heif"),            'h'},
   { N_("libraw"),          'l'},
-  { N_("webp"),            'w'}
+  { N_("webp"),            'w'},
+  { N_("x3f (experimental)"), 'x'}
 };
 
 typedef struct dt_image_geoloc_t

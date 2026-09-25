@@ -85,6 +85,9 @@
 #include "imageio/imageio_png.h"
 #include "imageio/imageio_pnm.h"
 #include "imageio/imageio_rawspeed.h"
+#ifdef HAVE_X3F_RUST
+#include "imageio/imageio_x3f.h"
+#endif
 #include "imageio/imageio_libraw.h"
 #include "imageio/imageio_rgbe.h"
 #include "imageio/imageio_tiff.h"
@@ -515,6 +518,11 @@ dt_imageio_retval_t dt_imageio_open_raster(dt_image_t *img, const char *filename
 
 dt_imageio_retval_t dt_imageio_open_raw(dt_image_t *img, const char *filename, dt_mipmap_buffer_t *buf)
 {
+#ifdef HAVE_X3F_RUST
+  const char *extension = strrchr(filename, '.');
+  if(!IS_NULL_PTR(extension) && !g_ascii_strcasecmp(extension, ".x3f"))
+    return dt_imageio_open_x3f(img, filename, buf);
+#endif
   // if buf is NULL, don't proceed
   if(IS_NULL_PTR(buf))
     return DT_IMAGEIO_OK;

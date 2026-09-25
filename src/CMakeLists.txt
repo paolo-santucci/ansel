@@ -652,6 +652,13 @@ add_library(lib_ansel_imageio_rawspeed STATIC imageio/imageio_rawspeed.cc)
 target_link_libraries(lib_ansel_imageio_rawspeed PRIVATE rawspeed)
 target_link_libraries(lib_ansel_imageio_rawspeed PUBLIC ansel_deps)
 
+if(USE_X3F_RUST)
+  add_subdirectory(external/x3f-rust)
+  add_library(lib_ansel_imageio_x3f STATIC imageio/imageio_x3f.c metadata/x3f.cc)
+  target_link_libraries(lib_ansel_imageio_x3f PRIVATE ansel_x3f PUBLIC ansel_deps)
+  target_compile_definitions(ansel_deps INTERFACE HAVE_X3F_RUST=1)
+endif()
+
 # Don't do too much, if `USE_BUNDLED_LIBRAW=OFF` but `libraw_FOUND=NOTFOUND`,
 # it's considered as packager's mistake. Instead of using bundled LibRaw as
 # fallback, just build without LibRaw support in that case so the mistake could
@@ -901,6 +908,9 @@ else()
   target_link_libraries(lib_ansel PRIVATE -Wl,--whole-archive ansel_widgets -Wl,--no-whole-archive)
 endif()
 target_link_libraries(lib_ansel PRIVATE lib_ansel_imageio_rawspeed)
+if(USE_X3F_RUST)
+  target_link_libraries(lib_ansel PRIVATE lib_ansel_imageio_x3f)
+endif()
 target_link_libraries(lib_ansel PRIVATE lib_ansel_imageio_libraw)
 target_link_libraries(lib_ansel PRIVATE whereami)
 # PUBLIC, because common/image.h embeds ls_vendor_data_t by value: every consumer of
