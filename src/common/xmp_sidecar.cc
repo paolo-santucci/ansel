@@ -107,6 +107,9 @@
 #include "common/xmp_sidecar.h"
 #include "metadata/exif.h"
 #include "metadata/exif_internal.h"
+#ifdef HAVE_X3F_RUST
+#include "metadata/x3f.h"
+#endif
 
 #include "caches/image_cache.h"
 #include "common/conf.h"
@@ -273,7 +276,11 @@ int dt_exif_read_blob(uint8_t **buf, const char *path, const int32_t imgid, cons
   *buf = NULL;
   try
   {
-    std::unique_ptr<Exiv2::Image> image(Exiv2::ImageFactory::open(WIDEN(path)));
+    std::unique_ptr<Exiv2::Image> image;
+#ifdef HAVE_X3F_RUST
+    image = dt_exif_open_x3f(path);
+#endif
+    if(IS_NULL_PTR(image.get())) image.reset(Exiv2::ImageFactory::open(WIDEN(path)).release());
     if(!image.get()) return 1;
     image->readMetadata();
     Exiv2::ExifData &exifData = image->exifData();
@@ -2347,7 +2354,11 @@ int dt_exif_xmp_attach_export(const int32_t imgid, const char *filename, void *m
     try
     {
       // initialize XMP and IPTC data with the one from the original file
-      std::unique_ptr<Exiv2::Image> input_image(Exiv2::ImageFactory::open(WIDEN(input_filename)));
+      std::unique_ptr<Exiv2::Image> input_image;
+#ifdef HAVE_X3F_RUST
+      input_image = dt_exif_open_x3f(input_filename);
+#endif
+      if(IS_NULL_PTR(input_image.get())) input_image.reset(Exiv2::ImageFactory::open(WIDEN(input_filename)).release());
       if(input_image.get() != 0)
       {
         input_image->readMetadata();
