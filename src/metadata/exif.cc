@@ -100,7 +100,7 @@
 
 #include "metadata/exif.h"
 #include "metadata/exif_internal.h"
-#ifdef HAVE_X3F_RUST
+#ifdef HAVE_RAWDINAL
 #include "metadata/x3f.h"
 #endif
 
@@ -1934,7 +1934,7 @@ int dt_exif_get_thumbnail(const char *path, uint8_t **buffer, size_t *size, char
   try
   {
     std::unique_ptr<Exiv2::Image> image;
-#ifdef HAVE_X3F_RUST
+#ifdef HAVE_RAWDINAL
     image = dt_exif_open_x3f(path);
 #endif
     if(IS_NULL_PTR(image.get())) image.reset(Exiv2::ImageFactory::open(WIDEN(path)).release());
@@ -2023,7 +2023,7 @@ int dt_exif_read(dt_image_t *img, const char *path)
   try
   {
     std::unique_ptr<Exiv2::Image> image;
-#ifdef HAVE_X3F_RUST
+#ifdef HAVE_RAWDINAL
     image = dt_exif_open_x3f(path);
 #endif
     if(IS_NULL_PTR(image.get())) image.reset(Exiv2::ImageFactory::open(WIDEN(path)).release());

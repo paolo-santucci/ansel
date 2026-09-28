@@ -395,11 +395,15 @@ void modify_roi_in(dt_iop_module_t *self, const dt_dev_pixelpipe_t *pipe, dt_dev
   _update_output_cfa_descriptor(pipe, piece, roi_in, &piece->dsc_out);
 }
 
+/** LinearRaw already has camera RGB channels: after preparation it crosses the RAW/RGB
+ * format boundary here, since no demosaic stage will publish an RGB descriptor for it.
+ */
 void output_format(dt_iop_module_t *self, dt_dev_pixelpipe_t *pipe, dt_dev_pixelpipe_iop_t *piece,
                    dt_iop_buffer_dsc_t *dsc)
 {
   default_output_format(self, pipe, piece, dsc);
   _update_output_cfa_descriptor(pipe, piece, &piece->roi_in, &piece->dsc_out);
+  if(!pipe->dev->image_storage.dsc.filters && dsc->channels == 4) dsc->cst = IOP_CS_RGB;
 }
 
 

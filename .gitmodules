@@ -24,3 +24,6 @@
 [submodule "src/external/exiv2"]
 	path = src/external/exiv2
 	url = https://github.com/Exiv2/exiv2.git
+[submodule "src/external/rawdinal"]
+	path = src/external/rawdinal
+	url = https://github.com/paolo-santucci/rawdinal.git

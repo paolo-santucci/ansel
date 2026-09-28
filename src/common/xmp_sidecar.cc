@@ -107,7 +107,7 @@
 #include "common/xmp_sidecar.h"
 #include "metadata/exif.h"
 #include "metadata/exif_internal.h"
-#ifdef HAVE_X3F_RUST
+#ifdef HAVE_RAWDINAL
 #include "metadata/x3f.h"
 #endif
 
@@ -277,7 +277,7 @@ int dt_exif_read_blob(uint8_t **buf, const char *path, const int32_t imgid, cons
   try
   {
     std::unique_ptr<Exiv2::Image> image;
-#ifdef HAVE_X3F_RUST
+#ifdef HAVE_RAWDINAL
     image = dt_exif_open_x3f(path);
 #endif
     if(IS_NULL_PTR(image.get())) image.reset(Exiv2::ImageFactory::open(WIDEN(path)).release());
@@ -2355,7 +2355,7 @@ int dt_exif_xmp_attach_export(const int32_t imgid, const char *filename, void *m
     {
       // initialize XMP and IPTC data with the one from the original file
       std::unique_ptr<Exiv2::Image> input_image;
-#ifdef HAVE_X3F_RUST
+#ifdef HAVE_RAWDINAL
       input_image = dt_exif_open_x3f(input_filename);
 #endif
       if(IS_NULL_PTR(input_image.get())) input_image.reset(Exiv2::ImageFactory::open(WIDEN(input_filename)).release());
