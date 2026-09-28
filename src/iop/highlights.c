@@ -873,12 +873,13 @@ static gboolean _highlights_image_supported(const dt_image_t *image)
   return dt_image_is_mosaiced(image) || !dt_image_is_monochrome(image);
 }
 
-// Whether the module should be enabled BY DEFAULT (auto-on). Only raw colorimetry (mosaiced raw or
-// sRAW/linear-DNG), not monochrome: on already-rendered RGB the module is available but opt-in, never
-// auto-enabled. Must match the commit_params() gate above.
+/** Rawdinal's reference white is a normalization reference, not sensor saturation.
+ * Keep highlight reconstruction opt-in for its already-reconstructed LinearRaw data.
+ */
 static gboolean enable(const dt_image_t *image)
 {
-  return dt_image_needs_rawprepare(image) && !dt_image_is_monochrome(image);
+  return image->loader != LOADER_RAWDINAL
+         && dt_image_needs_rawprepare(image) && !dt_image_is_monochrome(image);
 }
 
 gboolean force_enable(struct dt_iop_module_t *self, const gboolean current_state)

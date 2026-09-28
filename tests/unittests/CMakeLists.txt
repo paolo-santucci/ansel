@@ -48,6 +48,10 @@ set(LIB_ANSEL_UNIT_TESTS
   test_import_jobs
 )
 
+if(USE_RAWDINAL)
+  list(APPEND LIB_ANSEL_UNIT_TESTS test_imageio_rawdinal test_raw_decoder_dispatch)
+endif()
+
 foreach(test ${LIB_ANSEL_UNIT_TESTS})
   add_cmocka_test(${test}
                   SOURCES ${test}.c
@@ -72,6 +76,20 @@ foreach(test ${LIB_ANSEL_UNIT_TESTS})
     _copy_required_library(${test} lib_ansel)
   endif()
 endforeach()
+
+if(USE_RAWDINAL)
+  target_sources(test_imageio_rawdinal PRIVATE ${CMAKE_SOURCE_DIR}/src/imageio/imageio_rawdinal.c)
+  target_include_directories(test_imageio_rawdinal PRIVATE ${CMAKE_SOURCE_DIR}/src/external/rawdinal/include)
+  target_sources(test_raw_decoder_dispatch PRIVATE ${CMAKE_SOURCE_DIR}/src/imageio/imageio_core.c)
+  target_link_libraries(test_raw_decoder_dispatch PRIVATE ansel_deps)
+  target_compile_definitions(test_raw_decoder_dispatch PRIVATE HAVE_LIBRAW=1)
+  add_cmocka_test(test_dng_color SOURCES test_dng_color.cc
+    COMPILE_OPTIONS -Wno-error=deprecated-declarations
+    LINK_LIBRARIES ${CMOCKA_LINK_TARGET} lib_ansel)
+  target_include_directories(test_dng_color PRIVATE ${CMAKE_SOURCE_DIR}/src ${CMAKE_BINARY_DIR}/src ${CMAKE_BINARY_DIR})
+  set_target_properties(test_dng_color PROPERTIES SKIP_BUILD_RPATH FALSE BUILD_WITH_INSTALL_RPATH FALSE
+    BUILD_RPATH "$<TARGET_FILE_DIR:lib_ansel>")
+endif()
 
 # brush.c and paint.c live in the drawlayer IOP plugin, not in lib_ansel. Both are written to
 # be independent of the module internals, so the test compiles them directly rather than

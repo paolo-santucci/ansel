@@ -75,6 +75,83 @@ void __wrap_dt_iop_color_picker_reset(dt_iop_module_t *module, gboolean update)
  * TEST FUNCTIONS
  */
 
+static dt_introspection_field_t *filmic_default_field(const char *name)
+{
+  static dt_introspection_field_t black = { .Float.Default = -8.0f };
+  static dt_introspection_field_t white = { .Float.Default = 4.0f };
+  static dt_introspection_field_t power = { .Float.Default = 4.0f };
+  if(strcmp(name, "black_point_source") == 0) return &black;
+  if(strcmp(name, "white_point_source") == 0) return &white;
+  assert_string_equal(name, "output_power");
+  return &power;
+}
+
+static void test_reload_defaults_image_switching(void **state)
+{
+  const struct
+  {
+    dt_image_loader_t loader;
+    int flags;
+    gboolean enabled;
+  } images[] = {
+    { LOADER_X3F, DT_IMAGE_HDR | DT_IMAGE_BUFFER_RESOLVED, TRUE },
+    { LOADER_UNKNOWN, DT_IMAGE_HDR | DT_IMAGE_BUFFER_RESOLVED, FALSE },
+    { LOADER_UNKNOWN, DT_IMAGE_LDR | DT_IMAGE_BUFFER_RESOLVED, FALSE },
+    { LOADER_X3F, DT_IMAGE_LDR | DT_IMAGE_BUFFER_RESOLVED, FALSE },
+    { LOADER_UNKNOWN, 0, FALSE },
+    { LOADER_UNKNOWN, DT_IMAGE_RAW | DT_IMAGE_MOSAIC | DT_IMAGE_BUFFER_RESOLVED, TRUE },
+    { LOADER_UNKNOWN, DT_IMAGE_S_RAW | DT_IMAGE_BUFFER_RESOLVED, TRUE },
+    { LOADER_UNKNOWN, DT_IMAGE_RAW, TRUE },
+  };
+  dt_develop_t dev = { 0 };
+  dt_iop_filmicrgb_params_t defaults = { .grey_point_target = 18.45f };
+  dt_iop_module_so_t so = { .get_f = filmic_default_field };
+  dt_iop_module_t module = { .dev = &dev, .so = &so, .default_params = &defaults };
+
+  for(size_t previous = 0; previous < G_N_ELEMENTS(images); previous++)
+    for(size_t current = 0; current < G_N_ELEMENTS(images); current++)
+    {
+      dev.image_storage.loader = images[previous].loader;
+      dev.image_storage.flags = images[previous].flags;
+      reload_defaults(&module);
+      dev.image_storage.loader = images[current].loader;
+      dev.image_storage.flags = images[current].flags;
+      dev.image_storage.exif_exposure_bias = 1.0f;
+      reload_defaults(&module);
+      assert_int_equal(module.workflow_enabled, images[current].enabled);
+      if(!(images[current].flags & (DT_IMAGE_RAW | DT_IMAGE_S_RAW)))
+      {
+        assert_float_equal(defaults.black_point_source, -8.0f, E);
+        assert_float_equal(defaults.white_point_source, 4.0f, E);
+        assert_float_equal(defaults.output_power, 4.0f, E);
+      }
+    }
+}
+
+static void test_reload_defaults_raw_exposure(void **state)
+{
+  const float biases[] = { 0.0f, 1.0f, -2.0f };
+  const int flags[] = { DT_IMAGE_RAW | DT_IMAGE_MOSAIC, DT_IMAGE_S_RAW };
+  dt_develop_t dev = { 0 };
+  dt_iop_filmicrgb_params_t defaults = { .grey_point_target = 18.45f };
+  dt_iop_module_so_t so = { .get_f = filmic_default_field };
+  dt_iop_module_t module = { .dev = &dev, .so = &so, .default_params = &defaults };
+
+  for(size_t image = 0; image < G_N_ELEMENTS(flags); image++)
+    for(size_t bias = 0; bias < G_N_ELEMENTS(biases); bias++)
+    {
+      dev.image_storage.flags = flags[image] | DT_IMAGE_BUFFER_RESOLVED;
+      dev.image_storage.exif_exposure_bias = biases[bias];
+      reload_defaults(&module);
+      const float white = 3.15f - biases[bias];
+      const float black = white - 12.0f;
+      assert_true(module.workflow_enabled);
+      assert_float_equal(defaults.white_point_source, white, E);
+      assert_float_equal(defaults.black_point_source, black, E);
+      assert_float_equal(defaults.output_power, logf(0.1845f) / logf(-black / 12.0f), E);
+    }
+}
+
 static void test_name(void **state)
 {
   // the underscore is the mnemonic marker (see "Modules: implement mnemonics on names")
@@ -523,6 +600,8 @@ static void test_linear_saturation(void **state)
 int main(int argc, char* argv[])
 {
   const struct CMUnitTest tests[] = {
+    cmocka_unit_test(test_reload_defaults_image_switching),
+    cmocka_unit_test(test_reload_defaults_raw_exposure),
     cmocka_unit_test(test_name),
     cmocka_unit_test(test_default_group),
     cmocka_unit_test(test_clamp_simd),

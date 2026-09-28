@@ -85,8 +85,9 @@
 #include "imageio/imageio_png.h"
 #include "imageio/imageio_pnm.h"
 #include "imageio/imageio_rawspeed.h"
-#ifdef HAVE_X3F_RUST
+#ifdef HAVE_RAWDINAL
 #include "imageio/imageio_x3f.h"
+#include "imageio/imageio_rawdinal.h"
 #endif
 #include "imageio/imageio_libraw.h"
 #include "imageio/imageio_rgbe.h"
@@ -518,7 +519,7 @@ dt_imageio_retval_t dt_imageio_open_raster(dt_image_t *img, const char *filename
 
 dt_imageio_retval_t dt_imageio_open_raw(dt_image_t *img, const char *filename, dt_mipmap_buffer_t *buf)
 {
-#ifdef HAVE_X3F_RUST
+#ifdef HAVE_RAWDINAL
   const char *extension = strrchr(filename, '.');
   if(!IS_NULL_PTR(extension) && !g_ascii_strcasecmp(extension, ".x3f"))
     return dt_imageio_open_x3f(img, filename, buf);
@@ -538,6 +539,11 @@ dt_imageio_retval_t dt_imageio_open_raw(dt_image_t *img, const char *filename, d
     ret = dt_imageio_open_rawspeed(img, filename, buf);
     if(ret == DT_IMAGEIO_OK || ret == DT_IMAGEIO_CACHE_FULL)
       return ret;
+#ifdef HAVE_RAWDINAL
+    ret = dt_imageio_open_rawdinal(img, filename, buf);
+    if(ret != DT_IMAGEIO_UNSUPPORTED_FORMAT && ret != DT_IMAGEIO_UNSUPPORTED_FEATURE)
+      return ret;
+#endif
   }
 
 #ifdef HAVE_LIBRAW
@@ -553,6 +559,11 @@ dt_imageio_retval_t dt_imageio_open_raw(dt_image_t *img, const char *filename, d
     ret = dt_imageio_open_rawspeed(img, filename, buf);
     if(ret == DT_IMAGEIO_OK || ret == DT_IMAGEIO_CACHE_FULL)
       return ret;
+#ifdef HAVE_RAWDINAL
+    ret = dt_imageio_open_rawdinal(img, filename, buf);
+    if(ret != DT_IMAGEIO_UNSUPPORTED_FORMAT && ret != DT_IMAGEIO_UNSUPPORTED_FEATURE)
+      return ret;
+#endif
   }
 
   return DT_IMAGEIO_FILE_CORRUPTED;
@@ -1057,6 +1068,8 @@ dt_imageio_retval_t dt_imageio_open(dt_image_t *img,               // non-const 
   if(ret != DT_IMAGEIO_OK && ret != DT_IMAGEIO_CACHE_FULL && dt_imageio_is_raw(filename))
     ret = dt_imageio_open_raw(img, filename, buf);
 
+  if(ret == DT_IMAGEIO_DECODE_FAILED) goto load_failed;
+
   if(ret != DT_IMAGEIO_OK && ret != DT_IMAGEIO_CACHE_FULL && dt_imageio_is_hdr(filename))
     ret = dt_imageio_open_hdr(img, filename, buf);
 
@@ -1068,9 +1081,12 @@ dt_imageio_retval_t dt_imageio_open(dt_image_t *img,               // non-const 
   if(ret != DT_IMAGEIO_OK && ret != DT_IMAGEIO_CACHE_FULL)
     ret = dt_imageio_open_raw(img, filename, buf);
 
+  if(ret == DT_IMAGEIO_DECODE_FAILED) goto load_failed;
+
   if(ret != DT_IMAGEIO_OK && ret != DT_IMAGEIO_CACHE_FULL)
     ret = dt_imageio_open_hdr(img, filename, buf);
 
+load_failed:
   // Final check and abort
   if(ret != DT_IMAGEIO_OK)
   {

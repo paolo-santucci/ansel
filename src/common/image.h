@@ -97,7 +97,8 @@ typedef enum dt_imageio_retval_t
   DT_IMAGEIO_UNSUPPORTED_FEATURE, // format supported but uses unsupported feature
   DT_IMAGEIO_UNSUPPORTED_CAMERA,  // camera model not supported by loader
   DT_IMAGEIO_LOAD_FAILED,         // internal loader failure
-  DT_IMAGEIO_IOERROR              // I/O error while reading file
+  DT_IMAGEIO_IOERROR,             // I/O error while reading file
+  DT_IMAGEIO_DECODE_FAILED        //!< Recognized input failed: no further decoder may reinterpret it.
 } dt_imageio_retval_t;
 
 typedef enum
@@ -295,7 +296,8 @@ typedef enum dt_image_loader_t
   LOADER_LIBRAW   = 12,
   LOADER_WEBP     = 13,
   LOADER_X3F      = 14,
-  LOADER_COUNT    = 15, // keep last
+  LOADER_RAWDINAL = 15,
+  LOADER_COUNT    = 16, // keep last
 } dt_image_loader_t;
 
 typedef enum dt_image_path_source_t
@@ -326,7 +328,8 @@ static const struct
   { N_("heif"),            'h'},
   { N_("libraw"),          'l'},
   { N_("webp"),            'w'},
-  { N_("x3f (experimental)"), 'x'}
+  { N_("x3f (experimental)"), 'x'},
+  { N_("rawdinal (experimental)"), 'd'}
 };
 
 typedef struct dt_image_geoloc_t

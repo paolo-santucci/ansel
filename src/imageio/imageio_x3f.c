@@ -1,6 +1,6 @@
 #include "imageio/imageio_x3f.h"
 #include "develop/imageop.h"
-#include "external/x3f-rust/ffi/ansel_x3f.h"
+#include <rawdinal.h>
 #include "metadata/exif.h"
 #include "system/macros.h"
 #include "system/mem_alloc.h"
@@ -19,10 +19,10 @@ dt_imageio_retval_t dt_imageio_open_x3f(dt_image_t *img, const char *filename, d
     return DT_IMAGEIO_FILE_CORRUPTED;
   }
 
-  ansel_x3f_image *decoded = NULL;
-  ansel_x3f_info info = { 0 };
+  rawdinal_image *decoded = NULL;
+  rawdinal_info info = { 0 };
   char message[256] = { 0 };
-  const int result = ansel_x3f_decode((const uint8_t *)g_mapped_file_get_contents(file),
+  const int result = rawdinal_decode((const uint8_t *)g_mapped_file_get_contents(file),
                                       g_mapped_file_get_length(file), &decoded, &info, message, sizeof(message));
   g_mapped_file_unref(file);
   if(result != 0)
@@ -67,9 +67,9 @@ dt_imageio_retval_t dt_imageio_open_x3f(dt_image_t *img, const char *filename, d
     float *pixels = dt_mipmap_cache_alloc(mbuf, img);
     if(IS_NULL_PTR(pixels))
       status = DT_IMAGEIO_CACHE_FULL;
-    else if(ansel_x3f_copy_rgba(decoded, pixels, (size_t)info.width * info.height * 4) != 0)
+    else if(rawdinal_copy_rgba(decoded, pixels, (size_t)info.width * info.height * 4) != 0)
       status = DT_IMAGEIO_FILE_CORRUPTED;
   }
-  ansel_x3f_free(decoded);
+  rawdinal_free(decoded);
   return status;
 }

@@ -4219,9 +4219,18 @@ void gui_update(dt_iop_module_t *self)
   gui_changed(self, NULL, NULL);
 }
 
+/** Initialize RAW exposure defaults separately from workflow activation.
+ * Decoded X3F RGB receives no automatic exposure boost or bias compensation,
+ * so it uses Filmic's standard parameters even though Filmic is workflow-enabled.
+ */
 void reload_defaults(dt_iop_module_t *module)
 {
   dt_iop_filmicrgb_params_t *d = module->default_params;
+  const dt_image_t *img = &module->dev->image_storage;
+  const gboolean needs_rawprepare = dt_image_needs_rawprepare(img);
+  module->workflow_enabled = needs_rawprepare
+                             || (img->loader == LOADER_X3F
+                                 && dt_image_pipe_class(img) == DT_IMAGE_PIPE_RGB_HDR);
 
   d->black_point_source = module->so->get_f("black_point_source")->Float.Default;
   d->white_point_source = module->so->get_f("white_point_source")->Float.Default;
@@ -4231,9 +4240,8 @@ void reload_defaults(dt_iop_module_t *module)
   // OR already-demosaiced sraw/linear DNG), so gate on needs_rawprepare rather than the
   // mosaic-centric DT_IMAGE_RAW flag, otherwise an sraw/linear DNG silently gets the
   // display-referred defaults.
-  if(dt_image_needs_rawprepare(&module->dev->image_storage))
+  if(needs_rawprepare)
   {
-    // For scene-referred workflow, auto-enable and adjust based on exposure
     // TODO: fetch actual exposure in module, don't assume 1.
     const float exposure = 0.7f - dt_image_get_exposure_bias(&module->dev->image_storage);
 
@@ -4244,8 +4252,6 @@ void reload_defaults(dt_iop_module_t *module)
     d->black_point_source = d->white_point_source - 12.f; // 12 EV of dynamic range is a good default for modern cameras
     d->output_power = logf(d->grey_point_target / 100.0f)
                       / logf(-d->black_point_source / (d->white_point_source - d->black_point_source));
-
-    module->workflow_enabled = TRUE;
   }
   dt_iop_fmt_log(module, "reload_defaults: class=%s needs_rawprepare=%d -> workflow_enabled=%d white=%.3f black=%.3f",
                  dt_image_pipe_class_name(dt_image_pipe_class(&module->dev->image_storage)),
