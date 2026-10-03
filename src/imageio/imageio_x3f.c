@@ -6,6 +6,7 @@
 #include "system/mem_alloc.h"
 
 #include <glib.h>
+#include <math.h>
 #include <string.h>
 
 dt_imageio_retval_t dt_imageio_open_x3f(dt_image_t *img, const char *filename, dt_mipmap_buffer_t *mbuf)
@@ -22,8 +23,9 @@ dt_imageio_retval_t dt_imageio_open_x3f(dt_image_t *img, const char *filename, d
   rawdinal_image *decoded = NULL;
   rawdinal_info info = { 0 };
   char message[256] = { 0 };
-  const int result = rawdinal_decode((const uint8_t *)g_mapped_file_get_contents(file),
-                                      g_mapped_file_get_length(file), &decoded, &info, message, sizeof(message));
+  const int result = rawdinal_decode_with_clipping_v1((const uint8_t *)g_mapped_file_get_contents(file),
+                                                       g_mapped_file_get_length(file), &decoded, &info,
+                                                       message, sizeof(message));
   g_mapped_file_unref(file);
   if(result != 0)
   {
@@ -53,6 +55,7 @@ dt_imageio_retval_t dt_imageio_open_x3f(dt_image_t *img, const char *filename, d
   {
     img->wb_coeffs[channel] = 1.0f;
     img->raw_black_level_separate[channel] = 0;
+    img->dsc.processed_maximum[channel] = 1.0f;
   }
   dt_free(img->profile);
   img->profile = NULL;
@@ -69,6 +72,38 @@ dt_imageio_retval_t dt_imageio_open_x3f(dt_image_t *img, const char *filename, d
       status = DT_IMAGEIO_CACHE_FULL;
     else if(rawdinal_copy_rgba(decoded, pixels, (size_t)info.width * info.height * 4) != 0)
       status = DT_IMAGEIO_FILE_CORRUPTED;
+    else
+    {
+      rawdinal_clipping_v1_info clipping = { 0 };
+      if(rawdinal_get_clipping_v1(decoded, &clipping) != RAWDINAL_STATUS_OK
+         || clipping.version != RAWDINAL_CLIPPING_V1_INFO_VERSION
+         || clipping.width != info.width || clipping.height != info.height
+         || clipping.width == 0 || clipping.height == 0
+         || clipping.stride_bytes < clipping.width || IS_NULL_PTR(clipping.data)
+         || clipping.height - 1 > (SIZE_MAX - clipping.width) / clipping.stride_bytes
+         || clipping.byte_count < (clipping.height - 1) * clipping.stride_bytes + clipping.width)
+        status = DT_IMAGEIO_FILE_CORRUPTED;
+      for(size_t layer = 0; status == DT_IMAGEIO_OK && layer < 3; layer++)
+      {
+        const rawdinal_clipping_v1_plane *const plane = &clipping.planes[layer];
+        if(plane->identity != layer
+           || (plane->threshold_provenance != RAWDINAL_CLIPPING_V1_THRESHOLD_ESTIMATED_ENCODED_MAXIMUM
+               && plane->threshold_provenance != RAWDINAL_CLIPPING_V1_THRESHOLD_CALIBRATED))
+          status = DT_IMAGEIO_FILE_CORRUPTED;
+      }
+      if(status == DT_IMAGEIO_OK)
+      {
+        const float clipped = nextafterf(1.0f, INFINITY);
+        __OMP_PARALLEL_FOR__()
+        for(size_t row = 0; row < clipping.height; row++)
+          for(size_t col = 0; col < clipping.width; col++)
+            if(clipping.data[row * clipping.stride_bytes + col])
+            {
+              float *const pixel = pixels + (row * clipping.width + col) * 4;
+              pixel[0] = pixel[1] = pixel[2] = clipped;
+            }
+      }
+    }
   }
   rawdinal_free(decoded);
   return status;
