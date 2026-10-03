@@ -112,7 +112,7 @@ static void interpolates_dual_illuminant_at_d65(void **state)
   data["Exif.Image.ColorMatrix2"].setValue("2/1 0/1 0/1 0/1 2/1 0/1 0/1 0/1 2/1");
   source->writeMetadata();
   dt_image_t image = {};
-  const double weight = (1.0 / 6504.0 - 1.0 / 2856.0) / (1.0 / 7504.0 - 1.0 / 2856.0);
+  const double weight = (1.0 / 6504.0 - 1.0 / 2850.0) / (1.0 / 7500.0 - 1.0 / 2850.0);
   assert_int_equal(dt_dng_color_read(&image, path), 0);
   assert_float_equal(image.d65_color_matrix[0], 2 * (1 + weight), 1e-6);
 }
@@ -133,6 +133,65 @@ static void supports_as_shot_white_xy(void **state)
   assert_float_equal(image.wb_coeffs[2], 0.3290 / (3 * (1 - 0.3127 - 0.3290)), 1e-6);
 }
 
+static void interpolates_calibrated_endpoints_without_cross_terms(void **state)
+{
+  auto source = Exiv2::ImageFactory::open(path);
+  source->readMetadata();
+  auto &data = source->exifData();
+  data["Exif.Image.CalibrationIlluminant1"] = uint16_t(17);
+  data["Exif.Image.CalibrationIlluminant2"] = uint16_t(22);
+  data["Exif.Image.CameraCalibration1"].setValue("1/1 1/2 0/1 0/1 1/1 0/1 0/1 0/1 1/1");
+  data["Exif.Image.CameraCalibration2"].setValue("1/1 1/4 0/1 0/1 1/1 0/1 0/1 0/1 1/1");
+  data["Exif.Image.ColorMatrix2"].setValue("1/1 0/1 0/1 0/1 3/1 0/1 0/1 0/1 1/1");
+  source->writeMetadata();
+  dt_image_t image = {};
+  assert_int_equal(dt_dng_color_read(&image, path), DT_IMAGEIO_OK);
+  const double weight = (1.0 / 6504.0 - 1.0 / 2850.0) / (1.0 / 7500.0 - 1.0 / 2850.0);
+  assert_float_equal(image.d65_color_matrix[1], 1.0 + 0.5 * weight, 1e-6);
+}
+
+static void supports_single_calibration_across_standard_illuminants(void **state)
+{
+  const uint16_t illuminants[] = { 1, 2, 3, 4, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24 };
+  auto source = Exiv2::ImageFactory::open(path);
+  source->readMetadata();
+  for(const uint16_t illuminant : illuminants)
+  {
+    source->exifData()["Exif.Image.CalibrationIlluminant1"] = illuminant;
+    source->writeMetadata();
+    dt_image_t image = {};
+    assert_int_equal(dt_dng_color_read(&image, path), DT_IMAGEIO_OK);
+    assert_float_equal(image.d65_color_matrix[0], 2, 1e-6);
+    assert_float_equal(image.d65_color_matrix[4], 1, 1e-6);
+    assert_float_equal(image.d65_color_matrix[8], 3, 1e-6);
+  }
+}
+
+static void standard_light_b_and_c_select_the_d65_endpoint(void **state)
+{
+  auto source = Exiv2::ImageFactory::open(path);
+  source->readMetadata();
+  auto &data = source->exifData();
+  data["Exif.Image.CalibrationIlluminant1"] = uint16_t(18);
+  data["Exif.Image.CalibrationIlluminant2"] = uint16_t(19);
+  data["Exif.Image.ColorMatrix2"].setValue("2/1 0/1 0/1 0/1 2/1 0/1 0/1 0/1 2/1");
+  source->writeMetadata();
+  dt_image_t image = {};
+  assert_int_equal(dt_dng_color_read(&image, path), DT_IMAGEIO_OK);
+  assert_float_equal(image.d65_color_matrix[0], 4, 1e-6);
+}
+
+static void single_calibration_does_not_require_a_known_illuminant(void **state)
+{
+  auto source = Exiv2::ImageFactory::open(path);
+  source->readMetadata();
+  source->exifData()["Exif.Image.CalibrationIlluminant1"] = uint16_t(0);
+  source->writeMetadata();
+  dt_image_t image = {};
+  assert_int_equal(dt_dng_color_read(&image, path), DT_IMAGEIO_OK);
+  assert_float_equal(image.d65_color_matrix[0], 2, 1e-6);
+}
+
 static void unsupported_profiles_permit_fallback(void **state)
 {
   auto source = Exiv2::ImageFactory::open(path);
@@ -144,6 +203,8 @@ static void unsupported_profiles_permit_fallback(void **state)
   auto &data = source->exifData();
   data.erase(data.findKey(Exiv2::ExifKey("Exif.Image.ForwardMatrix1")));
   data["Exif.Image.CalibrationIlluminant1"] = uint16_t(0);
+  data["Exif.Image.CalibrationIlluminant2"] = uint16_t(21);
+  data["Exif.Image.ColorMatrix2"].setValue("1/1 0/1 0/1 0/1 1/1 0/1 0/1 0/1 1/1");
   source->writeMetadata();
   assert_int_equal(dt_dng_color_read(&image, path), DT_IMAGEIO_UNSUPPORTED_FEATURE);
 }
@@ -158,6 +219,10 @@ int main(void)
     cmocka_unit_test_setup_teardown(invalid_neutral_fails, setup, teardown),
     cmocka_unit_test_setup_teardown(interpolates_dual_illuminant_at_d65, setup, teardown),
     cmocka_unit_test_setup_teardown(supports_as_shot_white_xy, setup, teardown),
+    cmocka_unit_test_setup_teardown(interpolates_calibrated_endpoints_without_cross_terms, setup, teardown),
+    cmocka_unit_test_setup_teardown(supports_single_calibration_across_standard_illuminants, setup, teardown),
+    cmocka_unit_test_setup_teardown(standard_light_b_and_c_select_the_d65_endpoint, setup, teardown),
+    cmocka_unit_test_setup_teardown(single_calibration_does_not_require_a_known_illuminant, setup, teardown),
     cmocka_unit_test_setup_teardown(unsupported_profiles_permit_fallback, setup, teardown),
   };
   return cmocka_run_group_tests(tests, NULL, NULL);

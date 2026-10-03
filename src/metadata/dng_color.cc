@@ -27,11 +27,17 @@ double illuminant_temperature(const double illuminant)
   if(illuminant < 0 || illuminant > UINT16_MAX || std::trunc(illuminant) != illuminant) return 0;
   switch((int)illuminant)
   {
-    case 17: case 3: return 2856.0;
-    case 21: case 10: return 6504.0;
-    case 23: return 5003.0;
-    case 20: case 1: case 4: case 9: return 5503.0;
-    case 22: case 11: return 7504.0;
+    case 17: case 3: return 2850.0;
+    case 24: return 3200.0;
+    case 21: case 19: case 10: return 6500.0;
+    case 23: return 5000.0;
+    case 20: case 18: case 1: case 4: case 9: return 5500.0;
+    case 22: case 11: return 7500.0;
+    case 12: return 6400.0;
+    case 13: return 5050.0;
+    case 14: case 2: return 4150.0;
+    case 15: return 3525.0;
+    case 16: return 2925.0;
     default: return 0;
   }
 }
@@ -43,7 +49,7 @@ struct DngCalibration
   double analog[3] = { 1, 1, 1 };
 };
 
-/** Compose DNG AnalogBalance * CameraCalibration * ColorMatrix at an interpolated illuminant. */
+/** Interpolate calibrated endpoints, as in DNG SDK FindXYZtoCamera, without cross-illuminant products. */
 void calibrated_matrix(const DngCalibration &calibration, const double weight, double matrix[9])
 {
   for(int row = 0; row < 3; row++)
@@ -52,8 +58,8 @@ void calibrated_matrix(const DngCalibration &calibration, const double weight, d
       matrix[row * 3 + col] = 0;
       for(int k = 0; k < 3; k++)
         matrix[row * 3 + col] += calibration.analog[row]
-            * ((1.0 - weight) * calibration.camera[0][row * 3 + k] + weight * calibration.camera[1][row * 3 + k])
-            * ((1.0 - weight) * calibration.color[0][k * 3 + col] + weight * calibration.color[1][k * 3 + col]);
+            * ((1.0 - weight) * calibration.camera[0][row * 3 + k] * calibration.color[0][k * 3 + col]
+               + weight * calibration.camera[1][row * 3 + k] * calibration.color[1][k * 3 + col]);
     }
 }
 }
@@ -95,12 +101,10 @@ dt_imageio_retval_t dt_dng_color_read(dt_image_t *img, const char *filename)
     }
     const double first = illuminant_temperature(illuminants[0]);
     const double second = dual ? illuminant_temperature(illuminants[1]) : first;
-    if(first == 0 || second == 0) return DT_IMAGEIO_UNSUPPORTED_FEATURE;
+    if(dual && (first == 0 || second == 0)) return DT_IMAGEIO_UNSUPPORTED_FEATURE;
     double weight = 0;
     if(dual && first != second)
       weight = std::fmax(0.0, std::fmin(1.0, (1.0 / 6504.0 - 1.0 / first) / (1.0 / second - 1.0 / first)));
-    if(!dual && first != 6504.0)
-      return DT_IMAGEIO_UNSUPPORTED_FEATURE;
     double matrix[9];
     calibrated_matrix(calibration, weight, matrix);
     const double determinant = matrix[0] * (matrix[4] * matrix[8] - matrix[5] * matrix[7])
@@ -115,10 +119,14 @@ dt_imageio_retval_t dt_dng_color_read(dt_image_t *img, const char *filename)
          || xy[0] <= 0 || xy[1] <= 0 || xy[0] + xy[1] >= 1)
         throw std::runtime_error("missing or invalid DNG as-shot white");
       cmsCIExyY white = { xy[0], xy[1], 1.0 };
-      double temperature;
-      if(!cmsTempFromWhitePoint(&temperature, &white)) return DT_IMAGEIO_UNSUPPORTED_FEATURE;
-      const double shot_weight = dual && first != second
-          ? std::fmax(0.0, std::fmin(1.0, (1.0 / temperature - 1.0 / first) / (1.0 / second - 1.0 / first))) : 0;
+      double shot_weight = 0;
+      if(dual && first != second)
+      {
+        double temperature;
+        if(!cmsTempFromWhitePoint(&temperature, &white)) return DT_IMAGEIO_UNSUPPORTED_FEATURE;
+        shot_weight = std::fmax(0.0, std::fmin(1.0,
+            (1.0 / temperature - 1.0 / first) / (1.0 / second - 1.0 / first)));
+      }
       double shot_matrix[9];
       calibrated_matrix(calibration, shot_weight, shot_matrix);
       const double xyz[3] = { xy[0] / xy[1], 1, (1 - xy[0] - xy[1]) / xy[1] };
