@@ -1060,6 +1060,7 @@ static const char *const _skull_labels[] = {
   [DT_IMAGEIO_NO_EMBEDDED_THUMBNAIL] = N_("No embedded thumbnail"),
   [DT_IMAGEIO_PROCESSING_FAILED] = N_("Processing error"),
   [DT_IMAGEIO_ABORTED] = N_("Aborted"),
+  [DT_IMAGEIO_DECODE_FAILED] = N_("Decoding error"),
 };
 
 static dt_view_surface_value_t _view_image_get_surface_internal(int32_t imgid, int width, int height,
