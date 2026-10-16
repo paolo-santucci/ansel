@@ -24,19 +24,28 @@ dt_imageio_retval_t dt_imageio_open_rawdinal(dt_image_t *img, const char *filena
   rawdinal_raw_v1_probe_info probe = { 0 };
   rawdinal_raw_v1_capabilities capabilities = { 0 };
   rawdinal_raw_v1_info info = { 0 };
+  rawdinal_raw_v1_metadata metadata = { 0 };
   char message[256] = { 0 };
   dt_imageio_retval_t result = DT_IMAGEIO_DECODE_FAILED;
   const uint8_t *input = (const uint8_t *)g_mapped_file_get_contents(file);
   const size_t length = g_mapped_file_get_length(file);
   int status = rawdinal_raw_v1_probe(input, length, &probe, message, sizeof(message));
-  if(status == RAWDINAL_STATUS_UNSUPPORTED || status == RAWDINAL_STATUS_NOT_RECOGNIZED)
+  if(status == RAWDINAL_STATUS_NOT_RECOGNIZED)
+    result = DT_IMAGEIO_UNSUPPORTED_FORMAT;
+  else if(status == RAWDINAL_STATUS_UNSUPPORTED)
     result = DT_IMAGEIO_UNSUPPORTED_FEATURE;
+  else if(status == RAWDINAL_STATUS_ALLOCATION)
+    result = DT_IMAGEIO_CACHE_FULL;
   if(status != RAWDINAL_STATUS_OK) goto cleanup;
   if(probe.version != RAWDINAL_RAW_V1_PROBE_INFO_VERSION) goto cleanup;
-  if(probe.classification == RAWDINAL_RAW_V1_PROBE_NOT_RECOGNIZED
-     || probe.classification == RAWDINAL_RAW_V1_PROBE_RECOGNIZED_UNSUPPORTED)
+  if(probe.classification == RAWDINAL_RAW_V1_PROBE_NOT_RECOGNIZED)
   {
     result = DT_IMAGEIO_UNSUPPORTED_FORMAT;
+    goto cleanup;
+  }
+  if(probe.classification == RAWDINAL_RAW_V1_PROBE_RECOGNIZED_UNSUPPORTED)
+  {
+    result = DT_IMAGEIO_UNSUPPORTED_FEATURE;
     goto cleanup;
   }
   if(probe.classification != RAWDINAL_RAW_V1_PROBE_SUPPORTED
@@ -44,20 +53,31 @@ dt_imageio_retval_t dt_imageio_open_rawdinal(dt_image_t *img, const char *filena
   status = rawdinal_raw_v1_get_capabilities(&capabilities);
   if(status != RAWDINAL_STATUS_OK || capabilities.version != RAWDINAL_RAW_V1_CAPABILITIES_VERSION)
     goto cleanup;
-  const uint32_t codec = probe.codec == RAWDINAL_RAW_V1_CODEC_LOSSLESS_JPEG
-                            ? RAWDINAL_RAW_V1_CODEC_BIT_LOSSLESS_JPEG
-                            : probe.codec == RAWDINAL_RAW_V1_CODEC_JPEG_XL
-                                  ? RAWDINAL_RAW_V1_CODEC_BIT_JPEG_XL : 0;
+  uint32_t codec = 0;
+  switch(probe.codec)
+  {
+    case RAWDINAL_RAW_V1_CODEC_LOSSLESS_JPEG: codec = RAWDINAL_RAW_V1_CODEC_BIT_LOSSLESS_JPEG; break;
+    case RAWDINAL_RAW_V1_CODEC_JPEG_XL: codec = RAWDINAL_RAW_V1_CODEC_BIT_JPEG_XL; break;
+    case RAWDINAL_RAW_V1_CODEC_UNCOMPRESSED: codec = RAWDINAL_RAW_V1_CODEC_BIT_UNCOMPRESSED; break;
+    case RAWDINAL_RAW_V1_CODEC_LOSSY_JPEG: codec = RAWDINAL_RAW_V1_CODEC_BIT_LOSSY_JPEG; break;
+    default: break;
+  }
   if(!(capabilities.codec_bits & codec))
   {
     result = DT_IMAGEIO_UNSUPPORTED_FEATURE;
     goto cleanup;
   }
   status = rawdinal_raw_v1_decode(input, length, &decoded, message, sizeof(message));
-  if(status == RAWDINAL_STATUS_UNSUPPORTED || status == RAWDINAL_STATUS_NOT_RECOGNIZED)
+  if(status == RAWDINAL_STATUS_NOT_RECOGNIZED)
+    result = DT_IMAGEIO_UNSUPPORTED_FORMAT;
+  else if(status == RAWDINAL_STATUS_UNSUPPORTED)
     result = DT_IMAGEIO_UNSUPPORTED_FEATURE;
+  else if(status == RAWDINAL_STATUS_ALLOCATION)
+    result = DT_IMAGEIO_CACHE_FULL;
   if(status != RAWDINAL_STATUS_OK || IS_NULL_PTR(decoded)) goto cleanup;
   status = rawdinal_raw_v1_get_info(decoded, &info);
+  if(status != RAWDINAL_STATUS_OK) goto cleanup;
+  status = rawdinal_raw_v1_get_metadata(decoded, &metadata);
   if(status != RAWDINAL_STATUS_OK) goto cleanup;
 
   if(info.version != RAWDINAL_RAW_V1_INFO_VERSION || info.width == 0 || info.height == 0
@@ -75,34 +95,87 @@ dt_imageio_retval_t dt_imageio_open_rawdinal(dt_image_t *img, const char *filena
      || info.already_demosaiced != RAWDINAL_RAW_V1_TRUE
      || (info.colorimetric_reference_present
          && info.colorimetric_reference != RAWDINAL_RAW_V1_COLORIMETRIC_REFERENCE_SCENE_REFERRED)
-     || info.linearization != RAWDINAL_RAW_V1_PROCESSING_APPLIED
-     || info.black_subtraction != RAWDINAL_RAW_V1_PROCESSING_APPLIED
-     || info.white_normalization != RAWDINAL_RAW_V1_PROCESSING_APPLIED
-     || info.white_balance != RAWDINAL_RAW_V1_PROCESSING_UNAPPLIED
-     || info.color_conversion != RAWDINAL_RAW_V1_PROCESSING_UNAPPLIED
-     || info.demosaic != RAWDINAL_RAW_V1_PROCESSING_NOT_PRESENT
-     || info.opcode_list_1 != RAWDINAL_RAW_V1_PROCESSING_NOT_PRESENT
-     || info.opcode_list_2 != RAWDINAL_RAW_V1_PROCESSING_NOT_PRESENT
-     || info.opcode_list_3 != RAWDINAL_RAW_V1_PROCESSING_NOT_PRESENT) goto cleanup;
+      || (info.linearization != RAWDINAL_RAW_V1_PROCESSING_NOT_PRESENT
+          && info.linearization != RAWDINAL_RAW_V1_PROCESSING_APPLIED)
+      || info.black_subtraction != RAWDINAL_RAW_V1_PROCESSING_APPLIED
+      || info.white_normalization != RAWDINAL_RAW_V1_PROCESSING_APPLIED
+      || info.white_balance != RAWDINAL_RAW_V1_PROCESSING_UNAPPLIED
+      || info.color_conversion != RAWDINAL_RAW_V1_PROCESSING_UNAPPLIED
+      || info.demosaic != RAWDINAL_RAW_V1_PROCESSING_NOT_PRESENT)
+  {
+    result = DT_IMAGEIO_UNSUPPORTED_FEATURE;
+    goto cleanup;
+  }
+
+  const uint32_t opcodes[] = { info.opcode_list_1, info.opcode_list_2, info.opcode_list_3 };
+  for(size_t i = 0; i < G_N_ELEMENTS(opcodes); i++)
+    if(opcodes[i] != RAWDINAL_RAW_V1_PROCESSING_NOT_PRESENT && opcodes[i] != RAWDINAL_RAW_V1_PROCESSING_APPLIED
+       && opcodes[i] != RAWDINAL_RAW_V1_PROCESSING_SKIPPED_OPTIONAL
+       && opcodes[i] != RAWDINAL_RAW_V1_PROCESSING_PARTIALLY_APPLIED)
+    {
+      result = DT_IMAGEIO_UNSUPPORTED_FEATURE;
+      goto cleanup;
+    }
 
   const uint32_t deferred[] = { info.default_crop, info.orientation_processing, info.baseline_exposure,
                                info.profile_gain_table_map_processing, info.profile_tone_curve,
                                info.semantic_masks };
   for(size_t i = 0; i < G_N_ELEMENTS(deferred); i++)
     if(deferred[i] != RAWDINAL_RAW_V1_PROCESSING_NOT_PRESENT
-       && deferred[i] != RAWDINAL_RAW_V1_PROCESSING_UNAPPLIED) goto cleanup;
+       && deferred[i] != RAWDINAL_RAW_V1_PROCESSING_UNAPPLIED)
+    {
+      result = DT_IMAGEIO_UNSUPPORTED_FEATURE;
+      goto cleanup;
+    }
 
-  if(info.active_area_top >= info.active_area_bottom || info.active_area_left >= info.active_area_right
-     || info.active_area_bottom > info.height || info.active_area_right > info.width) goto cleanup;
+  if(metadata.version != RAWDINAL_RAW_V1_INFO_VERSION || info.active_area_top >= info.active_area_bottom
+      || info.active_area_left >= info.active_area_right
+      || info.active_area_bottom > info.height || info.active_area_right > info.width
+      || metadata.crop_origin_present > RAWDINAL_RAW_V1_TRUE || metadata.crop_size_present > RAWDINAL_RAW_V1_TRUE
+      || metadata.valid_area[0] >= metadata.valid_area[2] || metadata.valid_area[1] >= metadata.valid_area[3]
+      || metadata.valid_area[2] > info.height || metadata.valid_area[3] > info.width)
+    goto cleanup;
+  if(metadata.valid_area[0] != info.active_area_top || metadata.valid_area[1] != info.active_area_left
+     || metadata.valid_area[2] != info.active_area_bottom || metadata.valid_area[3] != info.active_area_right)
+  {
+    result = DT_IMAGEIO_UNSUPPORTED_FEATURE;
+    goto cleanup;
+  }
+  if(info.active_area_top != 0 || info.active_area_left != 0 || info.active_area_bottom != info.height
+     || info.active_area_right != info.width)
+  {
+    result = DT_IMAGEIO_UNSUPPORTED_FEATURE;
+    goto cleanup;
+  }
   const uint32_t active_width = info.active_area_right - info.active_area_left;
   const uint32_t active_height = info.active_area_bottom - info.active_area_top;
+  if((metadata.crop_origin_present && (!isfinite(metadata.crop_origin[0]) || !isfinite(metadata.crop_origin[1])))
+     || (metadata.crop_size_present && (!isfinite(metadata.crop_size[0]) || !isfinite(metadata.crop_size[1]))))
+    goto cleanup;
+  if((metadata.crop_origin_present && !info.default_crop_origin_present)
+     || (metadata.crop_size_present && !info.default_crop_size_present))
+  {
+    result = DT_IMAGEIO_UNSUPPORTED_FEATURE;
+    goto cleanup;
+  }
+  if((info.default_crop_origin_present
+      && (!metadata.crop_origin_present || metadata.crop_origin[0] != info.default_crop_origin_x
+          || metadata.crop_origin[1] != info.default_crop_origin_y))
+     || (info.default_crop_size_present
+         && (!metadata.crop_size_present || metadata.crop_size[0] != info.default_crop_size_width
+             || metadata.crop_size[1] != info.default_crop_size_height)))
+    goto cleanup;
   const uint32_t x = info.default_crop_origin_present ? info.default_crop_origin_x : 0;
   const uint32_t y = info.default_crop_origin_present ? info.default_crop_origin_y : 0;
   if(x >= active_width || y >= active_height) goto cleanup;
   const uint32_t width = info.default_crop_size_present ? info.default_crop_size_width : active_width - x;
   const uint32_t height = info.default_crop_size_present ? info.default_crop_size_height : active_height - y;
   if(width == 0 || height == 0 || width > active_width - x || height > active_height - y
-     || (info.orientation_present && (info.orientation < 1 || info.orientation > 8))) goto cleanup;
+      || (info.orientation_present && (info.orientation < 1 || info.orientation > 8))) goto cleanup;
+  const uint32_t crop_left = info.active_area_left + x;
+  const uint32_t crop_top = info.active_area_top + y;
+  const uint32_t crop_right = crop_left + width;
+  const uint32_t crop_bottom = crop_top + height;
 
   if(!img->exif_inited && dt_exif_read(img, filename)) goto cleanup;
   const dt_imageio_retval_t color_status = dt_dng_color_read(img, filename);
@@ -114,10 +187,10 @@ dt_imageio_retval_t dt_imageio_open_rawdinal(dt_image_t *img, const char *filena
   dt_exif_read_usercrop(img, filename);
   img->width = info.width;
   img->height = info.height;
-  img->crop_x = info.active_area_left + x;
-  img->crop_y = info.active_area_top + y;
-  img->crop_width = info.width - img->crop_x - width;
-  img->crop_height = info.height - img->crop_y - height;
+  img->crop_x = crop_left;
+  img->crop_y = crop_top;
+  img->crop_width = info.width - crop_right;
+  img->crop_height = info.height - crop_bottom;
   img->dsc.channels = 4;
   img->dsc.datatype = TYPE_FLOAT;
   img->dsc.bpp = 4 * sizeof(float);
